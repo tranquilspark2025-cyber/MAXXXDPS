@@ -218,6 +218,16 @@ function MaxDps:EnableRotation(skipPrint)
         self.ModuleOnEnable()
     end
 
+    -- Set AC update rate once at enable time (not per-tick to avoid taint)
+    if MaxDps:IsRetailWow() and not self.customRotationEabled then
+        if AssistedCombatManager then
+            AssistedCombatManager.updateRate = self.db.global.interval or 0.1
+        end
+        if not InCombatLockdown() then
+            SetCVar("assistedCombatIconUpdateRate", self.db.global.interval)
+        end
+    end
+
     self:EnableRotationTimer()
 
     self.rotationEnabled = true
@@ -758,13 +768,6 @@ function MaxDps:InvokeNextSpell()
                 self.Spell = (not isPassive) and nextSpell or 0
             else
                 self.Spell = 0
-            end
-            -- Sync AC update rate
-            if AssistedCombatManager then
-                AssistedCombatManager.updateRate = self.db.global.interval or 0.1
-            end
-            if not InCombatLockdown() then
-                SetCVar("assistedCombatIconUpdateRate", self.db.global.interval)
             end
             if MaxDpsSpellFrame then
                 self:UpdateSpellFrame(self.Spell)
