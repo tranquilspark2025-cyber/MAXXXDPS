@@ -151,9 +151,14 @@ function MaxDps:AddToBlizzardOptions()
 		MaxDps[(MaxDps.db.global.enabled and "EnableRotation" or "DisableRotation")](MaxDps)
 	end
 
-	local cdOnlyMode = StdUi:Checkbox(optionsFrame, 'Enable CD Only Mode', 200, 24)
+	local cdOnlyLabel = MaxDps:IsRetailWow() and 'CD Only Mode (N/A on Retail)' or 'Enable CD Only Mode'
+	local cdOnlyMode = StdUi:Checkbox(optionsFrame, cdOnlyLabel, 200, 24)
 	cdOnlyMode:SetChecked(MaxDps.db.global.cdOnlyMode)
 	cdOnlyMode.OnValueChanged = function(_, flag) MaxDps.db.global.cdOnlyMode = flag end
+	if MaxDps:IsRetailWow() then
+		cdOnlyMode:Disable()
+		cdOnlyMode:SetChecked(false)
+	end
 
 	local onCombatEnter = StdUi:Checkbox(optionsFrame, 'Enable upon entering combat', 200, 24)
 	onCombatEnter:SetChecked(MaxDps.db.global.onCombatEnter)

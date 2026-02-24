@@ -868,19 +868,9 @@ function MaxDps:GlowCooldown(spellId, condition, color)
 	    [73] = "Protection",
     }
     if MaxDps:IsRetailWow() and self.db.global.cdOnlyMode then
-        if (C_AssistedCombat and C_AssistedCombat.GetRotationSpells()) or (AssistedCombatManager and AssistedCombatManager.rotationSpells) then
-            local spells = AssistedCombatManager and AssistedCombatManager.rotationSpells or C_AssistedCombat.GetRotationSpells()
-            if AssistedCombatManager and AssistedCombatManager.rotationSpells then
-                if spells and spells[spellId] then
-                    return
-                end
-            elseif C_AssistedCombat and C_AssistedCombat.GetRotationSpells() then
-                for _, ACspellid in pairs(spells) do
-                    if ACspellid == spellId then
-                        return
-                    end
-                end
-            end
+        local acSpells = self.FrameData and self.FrameData.ACSpells
+        if acSpells and acSpells[spellId] then
+            return
         end
     end
     if MaxDps:IsRetailWow() or MaxDps:IsMistsWow() then
@@ -909,98 +899,129 @@ function MaxDps:GlowCooldown(spellId, condition, color)
     if WeakAuras then WeakAuras.ScanEvents('MAXDPS_COOLDOWN_UPDATE', self.Flags) end
 end
 
-function MaxDps:GlowDefensiveHPMidnight(spellId, condition)
-    if not MaxDps.db.global.enableDefensives then
-        if self.Flags[spellId] == nil then
+-- Cached color curves for Midnight glow functions (avoid per-tick allocation)
+local midnightCurve
+local function GetMidnightCurve()
+    if not midnightCurve then
+        midnightCurve = C_CurveUtil.CreateColorCurve()
+        midnightCurve:SetType(Enum.LuaCurveType.Linear)
+        midnightCurve:AddPoint(0.0, CreateColor(1, 0, 0, 1))
+        midnightCurve:AddPoint(0.3, CreateColor(1, 1, 0, 0.5))
+        midnightCurve:AddPoint(0.7, CreateColor(0, 1, 0, 0))
+    end
+    return midnightCurve
+end
+
+local issecretvalue = issecretvalue
+
+function MaxDps:GlowDefensiveHPMidnight(spellId, isKnown)
+    if not MaxDps.db.global.enableDefensives or not isKnown then
+        if self.Flags[spellId] then
             self.Flags[spellId] = false
+            self:ClearGlowIndependent(spellId, spellId)
         end
-        if self.Flags[spellId] == true then
-            self.Flags[spellId] = false
-        end
-        self:ClearGlowIndependent(spellId, spellId)
         return
     end
-    local curve = C_CurveUtil.CreateColorCurve()
-    curve:SetType(Enum.LuaCurveType.Linear)
-    curve:AddPoint(0.0, CreateColor(1, 0, 0, 1))
-    curve:AddPoint(0.3, CreateColor(1, 1, 0, 0.5))
-    curve:AddPoint(0.7, CreateColor(0, 1, 0, 0))
+    local curve = GetMidnightCurve()
     local color = UnitHealthPercent("player", false, curve)
     local duration = C_Spell.GetSpellCooldownDuration(spellId)
-    local durColor = duration and duration:EvaluateRemainingDuration(curve)
-    local _, _, _, alpha = durColor:GetRGBA()
-    if self.Flags[spellId] == nil then
-        self.Flags[spellId] = false
+    if issecretvalue and (issecretvalue(duration) or duration == nil) then
+        return
     end
+    local durColor = duration and duration:EvaluateRemainingDuration(curve)
+    if not durColor then return end
+    local _, _, _, alpha = durColor:GetRGBA()
     if not UnitIsDeadOrGhost("player") then
-        --print("Condition is true, applying glow for spellId: ", spellId)
         self.Flags[spellId] = true
         self:GlowIndependent(spellId, spellId, nil, color, alpha, "defensive")
-    end
-    if UnitIsDeadOrGhost("player") then
-        --print("Condition is false, clearing glow for spellId: ", spellId)
+    else
         self.Flags[spellId] = false
         self:ClearGlowIndependent(spellId, spellId)
     end
 end
 
 function MaxDps:GlowInteruptMidnight(spellId)
-    local curve = C_CurveUtil.CreateColorCurve()
-    curve:SetType(Enum.LuaCurveType.Linear)
-    curve:AddPoint(0.0, CreateColor(1, 0, 0, 1))
-    curve:AddPoint(0.3, CreateColor(1, 1, 0, 0.5))
-    curve:AddPoint(0.7, CreateColor(0, 1, 0, 0))
+    local curve = GetMidnightCurve()
     local color = UnitCastingDuration("target")
     local duration = C_Spell.GetSpellCooldownDuration(spellId)
+    if issecretvalue and (issecretvalue(duration) or duration == nil) then
+        return
+    end
     local durColor = duration and duration:EvaluateRemainingDuration(curve)
+    if not durColor then return end
     local _, _, _, alpha = durColor:GetRGBA()
     if self.Flags[spellId] == nil then
         self.Flags[spellId] = false
     end
     if color then
-        --print("Condition is true, applying glow for spellId: ", spellId)
         self.Flags[spellId] = true
         self:GlowIndependent(spellId, spellId, nil, CreateColor(1, 0, 0, 1), alpha)
-    end
-    if not color then
-        --print("Condition is false, clearing glow for spellId: ", spellId)
+    else
         self.Flags[spellId] = false
         self:ClearGlowIndependent(spellId, spellId)
     end
 end
 
-function MaxDps:GlowCooldownMidnight(spellId, condition)
-    if not MaxDps.db.global.enableCooldowns then
-        if self.Flags[spellId] == nil then
+function MaxDps:GlowCooldownMidnight(spellId, isKnown)
+    if not MaxDps.db.global.enableCooldowns or not isKnown then
+        if self.Flags[spellId] then
             self.Flags[spellId] = false
+            self:ClearGlowIndependent(spellId, spellId)
         end
-        if self.Flags[spellId] == true then
-            self.Flags[spellId] = false
-        end
-        self:ClearGlowIndependent(spellId, spellId)
         return
     end
-    local curve = C_CurveUtil.CreateColorCurve()
-    curve:SetType(Enum.LuaCurveType.Linear)
-    curve:AddPoint(0.0, CreateColor(1, 0, 0, 1))
-    curve:AddPoint(0.3, CreateColor(1, 1, 0, 0.5))
-    curve:AddPoint(0.7, CreateColor(0, 1, 0, 0))
+    local curve = GetMidnightCurve()
     local color = CreateColor(0, 1, 0, 1)
     local duration = C_Spell.GetSpellCooldownDuration(spellId)
+    if issecretvalue and (issecretvalue(duration) or duration == nil) then
+        return
+    end
     local durColor = duration and duration:EvaluateRemainingDuration(curve)
+    if not durColor then return end
     local _, _, _, alpha = durColor:GetRGBA()
-    if self.Flags[spellId] == nil then
-        self.Flags[spellId] = false
+    self.Flags[spellId] = true
+    self:GlowIndependent(spellId, spellId, nil, color, alpha, "cooldown")
+end
+
+--- Orchestrator: iterates classCooldowns for current class/spec and fires Midnight glow functions
+function MaxDps:GlowCooldownsMidnight()
+    local class = self.ClassId and self.Classes[self.ClassId]
+    if not class then return end
+    local classKey = string.upper(class)
+    -- Strip spaces to match Cooldowns.lua keys (e.g. "Beast Mastery" -> "BeastMastery")
+    local specName = self:SpecName()
+    if not specName then return end
+    specName = specName:gsub("%s+", "")
+
+    local cooldowns = self.classCooldowns
+    if not cooldowns or not cooldowns[classKey] or not cooldowns[classKey][specName] then
+        return
     end
-    if condition then
-        --print("Condition is true, applying glow for spellId: ", spellId)
-        self.Flags[spellId] = true
-        self:GlowIndependent(spellId, spellId, nil, color, alpha, "defensive")
+
+    local specCDs = cooldowns[classKey][specName]
+
+    -- Offensive cooldowns
+    if specCDs.offensive then
+        for _, spellId in pairs(specCDs.offensive) do
+            local isKnown = IsPlayerSpell(spellId)
+            self:GlowCooldownMidnight(spellId, isKnown)
+        end
     end
-    if not condition then
-        --print("Condition is false, clearing glow for spellId: ", spellId)
-        self.Flags[spellId] = false
-        self:ClearGlowIndependent(spellId, spellId)
+
+    -- Defensive cooldowns
+    if specCDs.defensive then
+        for _, spellId in pairs(specCDs.defensive) do
+            local isKnown = IsPlayerSpell(spellId)
+            self:GlowDefensiveHPMidnight(spellId, isKnown)
+        end
+    end
+
+    -- Interrupts
+    local interrupts = self.classInterrupts
+    if interrupts and interrupts[classKey] and interrupts[classKey][specName] then
+        for _, spellId in pairs(interrupts[classKey][specName]) do
+            self:GlowInteruptMidnight(spellId)
+        end
     end
 end
 

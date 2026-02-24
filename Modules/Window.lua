@@ -281,9 +281,10 @@ function Window:GetWindowConfig()
 				},
 				cdOnlyMode       = {
 					type   = 'checkbox',
-					label  = 'Enable CD Only Mode',
+					label  = MaxDps:IsRetailWow() and 'CD Only Mode (N/A on Retail)' or 'Enable CD Only Mode',
 					column = 6,
-					order  = 2
+					order  = 2,
+					disabled = MaxDps:IsRetailWow(),
 				},
 
 			},

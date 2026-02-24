@@ -1661,11 +1661,27 @@ function MaxDps:GlowConsumables()
         return
     end
 
-    for itemId in pairs(Consumables) do
-        local itemSpellId = self.ItemSpells[itemId]
-
-        if itemSpellId then
-            self:GlowCooldown(itemSpellId, self:ItemCooldown(itemId, 0).ready)
+    if MaxDps:IsRetailWow() then
+        local ok, err = pcall(function()
+            for itemId in pairs(Consumables) do
+                local itemSpellId = self.ItemSpells[itemId]
+                if itemSpellId then
+                    self:GlowCooldown(itemSpellId, self:ItemCooldown(itemId, 0).ready)
+                end
+            end
+        end)
+        if not ok then
+            -- Silently swallow secret-value errors on Retail
+            if MaxDps.db.global.debugMode then
+                MaxDps:Print(MaxDps.Colors.Error .. 'GlowConsumables error: ' .. tostring(err), "error")
+            end
+        end
+    else
+        for itemId in pairs(Consumables) do
+            local itemSpellId = self.ItemSpells[itemId]
+            if itemSpellId then
+                self:GlowCooldown(itemSpellId, self:ItemCooldown(itemId, 0).ready)
+            end
         end
     end
 end
@@ -1790,6 +1806,19 @@ end
 
 function MaxDps:ItemCooldown(itemId, timeShift)
     local start, duration, enabled = GetItemCooldown(itemId)
+
+    -- Guard against secret values on Retail Midnight
+    if (issecretvalue and issecretvalue(start)) or (issecretvalue and issecretvalue(duration)) then
+        return {
+            duration        = 0,
+            ready           = false,
+            remains         = 100000,
+            fullRecharge    = 100000,
+            partialRecharge = 100000,
+            charges         = 1,
+            maxCharges      = 1
+        }
+    end
 
     local t = GetTime()
     local remains = 100000

@@ -690,17 +690,21 @@ function MaxDps:PrepareFrameData()
         }
     end
 
-    self.FrameData.activeDot = self.ActiveDots
     if not MaxDps:IsRetailWow() then
-        self.FrameData.timeShift, self.FrameData.currentSpell, self.FrameData.gcdRemains = MaxDps:EndCast()
+        self.FrameData.activeDot = self.ActiveDots
     end
+    self.FrameData.timeShift, self.FrameData.currentSpell, self.FrameData.gcdRemains = MaxDps:EndCast()
     self.FrameData.gcd = self:GlobalCooldown()
-    self.FrameData.buff, self.FrameData.debuff = self.PlayerAuras, self.TargetAuras
+    if not MaxDps:IsRetailWow() then
+        self.FrameData.buff, self.FrameData.debuff = self.PlayerAuras, self.TargetAuras
+    end
     self.FrameData.talents = self.PlayerTalents
-    self.FrameData.azerite = self.AzeriteTraits
-    self.FrameData.essences = self.AzeriteEssences
-    self.FrameData.covenant = self.CovenantInfo
-    self.FrameData.runeforge = self.LegendaryBonusIds
+    if not MaxDps:IsRetailWow() then
+        self.FrameData.azerite = self.AzeriteTraits
+        self.FrameData.essences = self.AzeriteEssences
+        self.FrameData.covenant = self.CovenantInfo
+        self.FrameData.runeforge = self.LegendaryBonusIds
+    end
     self.FrameData.spellHistory = self.spellHistory
     if not MaxDps:IsRetailWow() then
         self.FrameData.timeToDie = self:GetTimeToDie()
@@ -712,7 +716,6 @@ function MaxDps:PrepareFrameData()
                 self.FrameData.ACSpells[spellid] = true
             end
         end
-        --self.FrameData.ACSpells = C_AssistedCombat and C_AssistedCombat.GetRotationSpells() or {}
     end
 end
 
@@ -734,7 +737,42 @@ function MaxDps:InvokeNextSpell()
 
     -- Removed backward compatibility
     --self.Spell = self.NextSpell()
-    if not MaxDps:IsRetailWow() then
+    if MaxDps:IsRetailWow() then
+        if self.customRotationEabled then
+            -- Custom rotation: try it, may fail from secrets
+            local ok, res = xpcall(self.NextSpell, err, self)
+            if ok then
+                self.Spell = res
+            else
+                if not self.Error then
+                    self:Print(self.Colors.Error .. "MaxDps Encountered an error, please report on Discord, including game version eg.Classic Retail Etc, And Class/Spec. Thanks!", "info")
+                end
+                self.Spell = 0
+                self.Error = true
+            end
+        else
+            -- Standard AC path: no class module, trust Blizzard's suggestion
+            local nextSpell = C_AssistedCombat.GetNextCastSpell(false)
+            if C_AssistedCombat.IsAvailable() and nextSpell and nextSpell ~= 0 then
+                local isPassive = C_Spell.IsSpellPassive(nextSpell)
+                self.Spell = (not isPassive) and nextSpell or 0
+            else
+                self.Spell = 0
+            end
+            -- Sync AC update rate
+            if AssistedCombatManager then
+                AssistedCombatManager.updateRate = self.db.global.interval or 0.1
+            end
+            if not InCombatLockdown() then
+                SetCVar("assistedCombatIconUpdateRate", self.db.global.interval)
+            end
+            if MaxDpsSpellFrame then
+                self:UpdateSpellFrame(self.Spell)
+            end
+            -- Fire CD glows via Midnight-compatible APIs
+            self:GlowCooldownsMidnight()
+        end
+    else
         local ok, res = xpcall(self.NextSpell, err, self)
         if ok then
             self.Spell = res
@@ -745,61 +783,13 @@ function MaxDps:InvokeNextSpell()
             self:Print(self.Colors.Error .. res, "error")
             self.Error = true
         end
-    else
-        local ok, res = xpcall(self.NextSpell, err, self)
-        if not ok then
-            if not self.Error then
-                self:Print(self.Colors.Error .. "MaxDps Encountered an error, please report on Discord, including game version eg.Classic Retail Etc, And Class/Spec. Thanks!", "info")
-            end
-            self.Error = true
-        end
-        if not self.customRotationEabled then
-            ----AssistedCombatManager.rotationSpells[279302] = nil
-            ----AssistedCombatManager.useAssistedHighlight = false
-            --local class = string.upper(MaxDps.Classes[MaxDps.ClassId])
-            --local specName = MaxDps:SpecName()
-            --local sSpell = C_AssistedCombat.GetNextCastSpell()
-            --AssistedCombatManager.UpdateAssistedHighlightCandidateActionButtonsList(self)
-            ----for _, spellID in pairs(MaxDps.classCooldowns[class][specName].offensive) do
-            ----    if sSpell == spellID then
-            ----        --print("cooldown suggested")
-            ----        AssistedCombatManager.lastNextCastSpellID = sSpell
-            ----    end
-            ----end
-            --for button, spellID in pairs(AssistedCombatManager.assistedHighlightCandidateActionButtons) do
-            --    --print(spellID)
-            --    --print(MaxDps.classCooldowns[class][specName].offensive[C_Spell.GetSpellName(spellID)])
-            --    if MaxDps.classCooldowns[class][specName].offensive[C_Spell.GetSpellName(spellID)] then
-            --        print("removing button")
-            --        AssistedCombatManager.assistedHighlightCandidateActionButtons[button] = nil
-            --    end
-            --end
-            --if class and specName and MaxDps.classCooldowns[class] and MaxDps.classCooldowns[class][specName] then
-            --    for _, spellID in pairs(MaxDps.classCooldowns[class][specName].offensive) do
-            --        if AssistedCombatManager.rotationSpells[spellID] then
-            --            AssistedCombatManager.rotationSpells[spellID] = nil
-            --        end
-            --    end
-            --end
-            local nextSpell = C_AssistedCombat.GetNextCastSpell(false)
-            self.Spell = C_AssistedCombat.IsAvailable() and nextSpell and MaxDps:CheckSpellUsable(nextSpell,C_Spell.GetSpellName(nextSpell)) and nextSpell or 0
-            AssistedCombatManager.updateRate = MaxDps.db.global.interval or 0.1
-            if not InCombatLockdown() then
-                SetCVar("assistedCombatIconUpdateRate", MaxDps.db.global.interval)
-            end
-            if MaxDpsSpellFrame then
-                MaxDps:UpdateSpellFrame(self.Spell)
-            end
-        else
-            self.Spell = res
-        end
     end
 
     if MaxDpsSpellFrame and not MaxDps.db.global.spellFrame.enabled then
         MaxDpsSpellFrame:Hide()
     end
 
-    if not self.db.global.cdOnlyMode then
+    if MaxDps:IsRetailWow() or not self.db.global.cdOnlyMode then
         if self.Spell == 0 then
             self:GlowClear()
             if MaxDpsSpellFrame and MaxDps.db.global.spellFrame.enabled then
